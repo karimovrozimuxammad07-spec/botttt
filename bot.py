@@ -1,6 +1,7 @@
 import logging
+import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
 import sqlite3
 import random
 import string
@@ -10,12 +11,13 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
-# Токен бота (замени на свой)
-BOT_TOKEN = "8044248337:AAGMTwUAVhAj-dkvvStQLpT7Di1Tjtevwf0"
+# Токен бота из переменных окружения (безопаснее)
+BOT_TOKEN = os.getenv('BOT_TOKEN', "8044248337:AAGMTwUAVhAj-dkvvStQLpT7Di1Tjtevwf0")
 
-# ID администратора (замени на свой Telegram ID)
-ADMIN_ID = 5234758651  # Замени на свой реальный ID
+# ID администратора
+ADMIN_ID = 5234758651
 
 # Подключение к базе данных
 def init_db():
@@ -131,7 +133,7 @@ def get_admin_stats():
     return total_users, users_with_referrals, total_referrals
 
 # Обработчик команды /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def start(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
     username = user.username
@@ -170,15 +172,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(welcome_text, reply_markup=reply_markup)
+    update.message.reply_text(welcome_text, reply_markup=reply_markup)
 
 # Обработчик административной команды
-async def admin_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def admin_statistics(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     
     # Проверяем, является ли пользователь администратором
     if user_id != ADMIN_ID:
-        await update.message.reply_text("❌ У вас нет доступа к этой команде.")
+        update.message.reply_text("❌ У вас нет доступа к этой команде.")
         return
     
     # Получаем статистику
@@ -203,15 +205,15 @@ async def admin_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         stats_text += "\n😔 Пока нет данных о рефералах"
     
-    await update.message.reply_text(stats_text, parse_mode='Markdown')
+    update.message.reply_text(stats_text, parse_mode='Markdown')
 
 # Обработчик нажатий на кнопки
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     user_info = get_user_info(user_id)
     
-    await query.answer()
+    query.answer()
     
     if query.data == "score":
         # Показываем счет рефералов
@@ -228,7 +230,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             referral_list = "😔 У вас пока нет рефералов.\nПригласите друзей, чтобы получить вознаграждение! 🎁"
         
-        await query.edit_message_text(
+        query.edit_message_text(
             text=referral_list,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]])
         )
@@ -248,7 +250,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             message = "❌ Вы не были приглашены через реферальную ссылку."
         
-        await query.edit_message_text(
+        query.edit_message_text(
             text=message,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]])
         )
@@ -256,8 +258,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "get_referral":
         # Показываем реферальную ссылку
         if user_info:
-            referral_token = user_info[3]
-            referral_link = f"https://t.me/{(await context.bot.get_me()).username}?start={user_id}"
+            bot_username = context.bot.username
+            referral_link = f"https://t.me/{bot_username}?start={user_id}"
             
             message = f"""
 🔗 Ваша реферальная ссылка:
@@ -270,7 +272,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 👥 Количество ваших рефералов: {len(get_user_referrals(user_id))}
             """
             
-            await query.edit_message_text(
+            query.edit_message_text(
                 text=message,
                 parse_mode='Markdown',
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]])
@@ -295,25 +297,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(text=welcome_text, reply_markup=reply_markup)
+        query.edit_message_text(text=welcome_text, reply_markup=reply_markup)
+
+# Обработка ошибок
+def error_handler(update: Update, context: CallbackContext):
+    logger.warning('Update "%s" caused error "%s"', update, context.error)
 
 # Основная функция
 def main():
     # Инициализируем базу данных
     init_db()
     
-    # Создаем приложение
-    application = Application.builder().token(BOT_TOKEN).build()
+    # Создаем updater и dispatcher
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
     
     # Добавляем обработчики
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("adminstatistikapolzovateley", admin_statistics))
-    application.add_handler(CallbackQueryHandler(button_handler))
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("adminstatistikapolzovateley", admin_statistics))
+    dp.add_handler(CallbackQueryHandler(button_handler))
+    
+    # Обработчик ошибок
+    dp.add_error_handler(error_handler)
     
     # Запускаем бота
     print("Бот запущен!")
-    application.run_polling()
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == "__main__":
-
     main()
