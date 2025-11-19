@@ -1,10 +1,10 @@
 import logging
 import os
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
 import sqlite3
 import random
 import string
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # Настройка логирования
 logging.basicConfig(
@@ -13,7 +13,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Токен бота из переменных окружения (безопаснее)
+# Токен бота
 BOT_TOKEN = os.getenv('BOT_TOKEN', "8044248337:AAGMTwUAVhAj-dkvvStQLpT7Di1Tjtevwf0")
 
 # ID администратора
@@ -21,10 +21,9 @@ ADMIN_ID = 5234758651
 
 # Подключение к базе данных
 def init_db():
-    conn = sqlite3.connect('referral_bot.db')
+    conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
     cursor = conn.cursor()
     
-    # Таблица пользователей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -43,7 +42,7 @@ def init_db():
 def generate_referral_token():
     while True:
         token = ''.join(random.choices(string.digits, k=8))
-        conn = sqlite3.connect('referral_bot.db')
+        conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM users WHERE referral_token = ?', (token,))
         if not cursor.fetchone():
@@ -53,10 +52,9 @@ def generate_referral_token():
 
 # Регистрация пользователя
 def register_user(user_id, username, first_name, referred_by=None):
-    conn = sqlite3.connect('referral_bot.db')
+    conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
     cursor = conn.cursor()
     
-    # Проверяем, существует ли пользователь
     cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
     user = cursor.fetchone()
     
@@ -71,7 +69,7 @@ def register_user(user_id, username, first_name, referred_by=None):
 
 # Получение информации о пользователе
 def get_user_info(user_id):
-    conn = sqlite3.connect('referral_bot.db')
+    conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
     user = cursor.fetchone()
@@ -80,7 +78,7 @@ def get_user_info(user_id):
 
 # Получение рефералов пользователя
 def get_user_referrals(user_id):
-    conn = sqlite3.connect('referral_bot.db')
+    conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('''
         SELECT user_id, username, first_name 
@@ -93,7 +91,7 @@ def get_user_referrals(user_id):
 
 # Получение топ-10 пользователей по количеству рефералов
 def get_top_referrers():
-    conn = sqlite3.connect('referral_bot.db')
+    conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('''
         SELECT 
@@ -113,18 +111,15 @@ def get_top_referrers():
 
 # Получение общей статистики
 def get_admin_stats():
-    conn = sqlite3.connect('referral_bot.db')
+    conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
     cursor = conn.cursor()
     
-    # Общее количество пользователей
     cursor.execute('SELECT COUNT(*) FROM users')
     total_users = cursor.fetchone()[0]
     
-    # Количество пользователей с рефералами
     cursor.execute('SELECT COUNT(DISTINCT referred_by) FROM users WHERE referred_by IS NOT NULL')
     users_with_referrals = cursor.fetchone()[0]
     
-    # Общее количество рефералов
     cursor.execute('SELECT COUNT(*) FROM users WHERE referred_by IS NOT NULL')
     total_referrals = cursor.fetchone()[0]
     
@@ -133,28 +128,24 @@ def get_admin_stats():
     return total_users, users_with_referrals, total_referrals
 
 # Обработчик команды /start
-def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     username = user.username
     first_name = user.first_name
     
-    # Проверяем реферальный параметр
     referred_by = None
     if context.args:
         try:
             referred_by = int(context.args[0])
-            # Проверяем, существует ли пользователь, который пригласил
             referrer = get_user_info(referred_by)
             if referrer:
                 referred_by = referred_by
         except ValueError:
             referred_by = None
     
-    # Регистрируем пользователя
     register_user(user_id, username, first_name, referred_by)
     
-    # Приветственное сообщение
     welcome_text = f"""
 Привет, {first_name}! 👋
 
@@ -164,7 +155,6 @@ def start(update: Update, context: CallbackContext):
 Выбери действие из меню ниже:
     """
     
-    # Создаем клавиатуру с кнопками
     keyboard = [
         [InlineKeyboardButton("📊 Мой счет", callback_data="score")],
         [InlineKeyboardButton("👤 Кто меня пригласил", callback_data="referrer")],
@@ -172,22 +162,19 @@ def start(update: Update, context: CallbackContext):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    update.message.reply_text(welcome_text, reply_markup=reply_markup)
+    await update.message.reply_text(welcome_text, reply_markup=reply_markup)
 
 # Обработчик административной команды
-def admin_statistics(update: Update, context: CallbackContext):
+async def admin_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    # Проверяем, является ли пользователь администратором
     if user_id != ADMIN_ID:
-        update.message.reply_text("❌ У вас нет доступа к этой команде.")
+        await update.message.reply_text("❌ У вас нет доступа к этой команде.")
         return
     
-    # Получаем статистику
     total_users, users_with_referrals, total_referrals = get_admin_stats()
     top_referrers = get_top_referrers()
     
-    # Формируем сообщение со статистикой
     stats_text = f"""
 📊 **АДМИНИСТРАТИВНАЯ СТАТИСТИКА**
 
@@ -205,18 +192,17 @@ def admin_statistics(update: Update, context: CallbackContext):
     else:
         stats_text += "\n😔 Пока нет данных о рефералах"
     
-    update.message.reply_text(stats_text, parse_mode='Markdown')
+    await update.message.reply_text(stats_text, parse_mode='Markdown')
 
 # Обработчик нажатий на кнопки
-def button_handler(update: Update, context: CallbackContext):
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     user_info = get_user_info(user_id)
     
-    query.answer()
+    await query.answer()
     
     if query.data == "score":
-        # Показываем счет рефералов
         referrals = get_user_referrals(user_id)
         
         if referrals:
@@ -230,14 +216,13 @@ def button_handler(update: Update, context: CallbackContext):
         else:
             referral_list = "😔 У вас пока нет рефералов.\nПригласите друзей, чтобы получить вознаграждение! 🎁"
         
-        query.edit_message_text(
+        await query.edit_message_text(
             text=referral_list,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]])
         )
     
     elif query.data == "referrer":
-        # Показываем, кто пригласил пользователя
-        if user_info and user_info[4]:  # referred_by
+        if user_info and user_info[4]:
             referrer_id = user_info[4]
             referrer_info = get_user_info(referrer_id)
             
@@ -250,15 +235,14 @@ def button_handler(update: Update, context: CallbackContext):
         else:
             message = "❌ Вы не были приглашены через реферальную ссылку."
         
-        query.edit_message_text(
+        await query.edit_message_text(
             text=message,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]])
         )
     
     elif query.data == "get_referral":
-        # Показываем реферальную ссылку
         if user_info:
-            bot_username = context.bot.username
+            bot_username = (await context.bot.get_me()).username
             referral_link = f"https://t.me/{bot_username}?start={user_id}"
             
             message = f"""
@@ -272,14 +256,13 @@ def button_handler(update: Update, context: CallbackContext):
 👥 Количество ваших рефералов: {len(get_user_referrals(user_id))}
             """
             
-            query.edit_message_text(
+            await query.edit_message_text(
                 text=message,
                 parse_mode='Markdown',
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]])
             )
     
     elif query.data == "back_to_main":
-        # Возвращаемся к главному меню
         user = query.from_user
         welcome_text = f"""
 Привет, {user.first_name}! 👋
@@ -297,33 +280,20 @@ def button_handler(update: Update, context: CallbackContext):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        query.edit_message_text(text=welcome_text, reply_markup=reply_markup)
-
-# Обработка ошибок
-def error_handler(update: Update, context: CallbackContext):
-    logger.warning('Update "%s" caused error "%s"', update, context.error)
+        await query.edit_message_text(text=welcome_text, reply_markup=reply_markup)
 
 # Основная функция
 def main():
-    # Инициализируем базу данных
     init_db()
     
-    # Создаем updater и dispatcher
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
+    application = Application.builder().token(BOT_TOKEN).build()
     
-    # Добавляем обработчики
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("adminstatistikapolzovateley", admin_statistics))
-    dp.add_handler(CallbackQueryHandler(button_handler))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("adminstatistikapolzovateley", admin_statistics))
+    application.add_handler(CallbackQueryHandler(button_handler))
     
-    # Обработчик ошибок
-    dp.add_error_handler(error_handler)
-    
-    # Запускаем бота
     print("Бот запущен!")
-    updater.start_polling()
-    updater.idle()
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
