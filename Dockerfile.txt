@@ -1,15 +1,11 @@
-# Базовый образ с Python
 FROM python:3.11-slim
 
-# Рабочая директория
 WORKDIR /app
 
-# Копируем код и requirements
-COPY . /app
-COPY requirements.txt /app
+COPY requirements.txt .
 
-# Устанавливаем зависимости
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Запуск бота
+COPY . .
+
 CMD ["python", "bot.py"]
