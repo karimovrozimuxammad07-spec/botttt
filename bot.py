@@ -12,7 +12,7 @@ logging.basicConfig(
 )
 
 # Токен бота (замени на свой)
-BOT_TOKEN = "7910545283:AAGaCF6WKng5iiFhXgDy9EHp3il2AMW8vgo"
+BOT_TOKEN = "8044248337:AAGMTwUAVhAj-dkvvStQLpT7Di1Tjtevwf0"
 
 # ID администратора (замени на свой Telegram ID)
 ADMIN_ID = 5234758651  # Замени на свой реальный ID
@@ -315,4 +315,5 @@ def main():
     application.run_polling()
 
 if __name__ == "__main__":
+
     main()
