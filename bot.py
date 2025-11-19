@@ -13,7 +13,7 @@ logging.basicConfig(
 )
 
 # Токен бота
-BOT_TOKEN = os.getenv('BOT_TOKEN', "8044248337:AAGMTwUAVhAj-dkvvStQLpT7Di1Tjtevwf0")
+BOT_TOKEN = os.getenv('8044248337:AAGMTwUAVhAj-dkvvStQLpT7Di1Tjtevwf0', "8044248337:AAGMTwUAVhAj-dkvvStQLpT7Di1Tjtevwf0")
 
 # ID администратора
 ADMIN_ID = 5234758651
@@ -298,3 +298,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
